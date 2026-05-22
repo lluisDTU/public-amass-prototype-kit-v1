@@ -1,15 +1,15 @@
 ---
 name: amass-sr-pre-screen
-description: Use when building a PRISMA pre-screen credibility-filter for systematic reviews (Cochrane / SR-as-a-service / academic). Provides build instructions for batch-resolving a curated PMID dump to canonical Amass IDs, post-filtering on JuFo + retraction + citation count, and emitting a Rayyan/Covidence-importable RIS file with an audit-trail CSV in a Next.js+TS app.
+description: Use when building a PRISMA pre-screen credibility-filter for systematic reviews (Cochrane / SR-as-a-service / academic). Provides build instructions for batch-resolving a curated PMID dump to canonical Amass IDs, post-filtering on JuFo + retraction + citation count, and emitting a Rayyan/Covidence-importable RIS file with an audit-trail CSV in a TypeScript app (Lovable typically scaffolds TanStack Start; Next.js App Router is the alternative path — both work end-to-end).
 license: Apache-2.0
 metadata:
   author: amass
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # SR Pre-Screen Skill (Amass BiomedCore)
 
-Build a working PRISMA pre-screen credibility-filter on the Amass API. The user is a systematic-review researcher running PRISMA 2020 (per `02-research/personas-and-icp.md:57-82`) who just got Amass API credentials and wants a Next.js + TypeScript pre-screen tool running locally in under five minutes.
+Build a working PRISMA pre-screen credibility-filter on the Amass API. The user is a systematic-review researcher running PRISMA 2020 (per `02-research/personas-and-icp.md:57-82`) who just got Amass API credentials and wants a TypeScript pre-screen tool running locally in under five minutes. Lovable typically scaffolds TanStack Start (TanStack Router + `createServerFn` server-functions); Next.js (App Router with `app/api/<endpoint>/route.ts`) is the alternative path. Both work end-to-end against the same `lib/amass.ts` client pattern — the Amass primitives are stack-agnostic.
 
 The SR researcher pastes a curated PMID dump from the upstream PRISMA search step (PubMed / Embase / CENTRAL / Scopus produce the standard 5,000-PMID export); the tool resolves each PMID to a canonical `AMBC_` Amass ID via batch lookup, fans out per-paper GETs to retrieve `isRetracted` + `journalQualityJufo` + `citationCount`, post-filters client-side against the configured credibility thresholds, and emits a Rayyan/Covidence-importable RIS file plus an audit-trail CSV — dropping the 5,000-PMID candidate set to a ~100-500-paper screening set before title/abstract screening. The worked example binds to an illustrative SR scope ("GLP-1 receptor agonists in obesity") with ~10 representative PMIDs. `[identifier-verification caveat — example identifiers assembled without live web access; re-verify against PubMed before binding to a real SR workflow]`
 
@@ -36,26 +36,32 @@ If the user supplies non-default thresholds, generate matching "Try sample" seed
 
 ---
 
-## Stack — pin tight
+## Stack — flexible at the framework layer, principle-pinned at the API layer
 
-Next.js (App Router) + TypeScript. These exact versions are required — do not upgrade without testing:
+**TypeScript + React + a server-function-capable framework.** Lovable defaults to **TanStack Start** (`@tanstack/react-router` + `@tanstack/react-start`'s `createServerFn` for server-side handlers). **Next.js (App Router)** with `app/api/<endpoint>/route.ts` POST handlers is the equivalent alternative path. Both work end-to-end against the same `lib/amass.ts` client; pick whichever your AI builder produces by default. The Amass primitives (canonical-ID resolution + per-item-error semantics + cross-core walks + trust filters) are stack-agnostic — the framework only wraps them.
+
+What IS pinned (load-bearing):
 
 ```json
 "@amass/sdk":             "{{amass-sdk-version}}",
-"@ai-sdk/react":          "{{ai-sdk-react-version}}",
-"ai":                     "{{ai-version}}",
-"next":                   "{{next-version}}",
 "react":                  "{{react-version}}",
 "react-dom":              "{{react-dom-version}}",
-"react-markdown":         "{{react-markdown-version}}",
+"typescript":             "{{typescript-version}}",
 "zod":                    "{{zod-version}}",
 "lucide-react":           "{{lucide-react-version}}",
 "server-only":            "{{server-only-version}}"
 ```
 
-Pin as **exact versions** (no `^`). `@amass/sdk` is pinned exactly because the audit-trail CSV `lookup_error` column semantics depend on the per-item-error array shape returned by `POST /records/lookup` per `01-capabilities/capability-map.md:121` — any SDK version that paraphrases or restructures the per-item-error string breaks the load-bearing UV-6 / A5 distinctive the prototype demonstrates. The 5,000-PMID-input scale exercises this surface load-bearingly: at ~50 batch-lookup calls per pre-screen run, every per-item `error` string the upstream surfaces feeds the SR researcher's audit trail verbatim. Next.js / `ai` / `@ai-sdk/react` are co-pinned for kit-wide consistency with the other 5 prototypes in `06-prototype-kit/`; v0.1 returns a consolidated JSON payload (non-streaming) so the triplet pinning is not load-bearing for this prototype, but kept aligned so future progress-streaming work re-uses the kit-wide stack.
+What's framework-specific (one set OR the other, not both):
 
-**Resolve `{{version}}` placeholders before `npm install`** — per Hard Rule #8 (ground-truth discipline), per-prototype dispatch reads installed `node_modules/<pkg>/package.json` for actual versions. A literal `{{next-version}}` in `package.json` triggers `npm ERR! EINVALIDTAGNAME` and aborts the install.
+- **TanStack Start path**: `@tanstack/react-router`, `@tanstack/react-start`, `vite`, `@vitejs/plugin-react`.
+- **Next.js (App Router) path**: `next` (latest stable), `@types/node`.
+
+Pin as **exact versions** (no `^`). `@amass/sdk` is pinned exactly because the audit-trail CSV `lookup_error` column semantics depend on the per-item-error array shape returned by `POST /records/lookup` per `01-capabilities/capability-map.md:121` — any SDK version that paraphrases or restructures the per-item-error string breaks the load-bearing UV-6 / A5 distinctive the prototype demonstrates. The 5,000-PMID-input scale exercises this surface load-bearingly: at ~50 batch-lookup calls per pre-screen run, every per-item `error` string the upstream surfaces feeds the SR researcher's audit trail verbatim. `zod` is pinned because the input-validator schema (`PreScreenSchema`) IS the request contract — silent zod-version drift in default-value or refine semantics shifts what the route accepts. `server-only` is pinned because it's the build-time enforcement Hard Rule #2 depends on (works identically in Next.js and TanStack Start).
+
+**Resolve `{{version}}` placeholders before `npm install`** — per Hard Rule #8 (ground-truth discipline), per-prototype dispatch reads installed `node_modules/<pkg>/package.json` for actual versions. A literal `{{next-version}}` or `{{tanstack-router-version}}` in `package.json` triggers `npm ERR! EINVALIDTAGNAME` and aborts the install.
+
+**Two notes for AI builders that may produce either path.** (1) The route file location differs: TanStack Start uses `src/lib/<name>.functions.ts` with `createServerFn({ method: "POST" }).inputValidator(...).handler(...)`; Next.js App Router uses `app/api/<endpoint>/route.ts` with `export async function POST(req: Request)`. The reference snippet below is shown in Next.js shape — if your builder produces TanStack Start, translate the `POST(req)` handler to `createServerFn(...).handler(async ({ data }) => ...)` and the `req.json()` body parse to `.inputValidator((input) => PreScreenSchema.parse(input))`. (2) The page file location differs: TanStack Router uses `src/routes/index.tsx` with `createFileRoute("/")`; Next.js App Router uses `app/page.tsx`. Either way, the page calls into the server function / route handler the same way at the network level.
 
 ---
 
@@ -67,7 +73,7 @@ The input surface is a **paste-PRISMA-export textarea** — one PMID per line, m
 
 The pre-screen run fans out batch-lookups + per-paper GETs at the 60 req / 60 s ceiling per `capability-map.md:383`. A 5,000-PMID input chunks into ~50 batch-lookup calls (~100 items each per `quality-gate-papers` SKILL.md usage warning and the conservative E-006 `items[]`-ceiling heuristic) + ~500 per-paper GETs at the post-filter step = ~550 calls per pre-screen run; wall-time ~15 min at the rate-limit ceiling. The route wraps the per-paper fan-out async generator in `withIdleTimeout(gen, 180_000)` per Hard Rule #7 and the client renders an analyst-visible **Cancel** button next to the primary "Run pre-screen" action while the fan-out is in flight. A progress indicator increments per resolved paper ("pre-screen run in progress — N of M papers post-filtered"); a stalled Amass call past the 180s idle threshold surfaces a "stream stalled — an Amass call likely hung" error without locking the UI indefinitely.
 
-The final state offers two downloadable artifacts side-by-side: a **Rayyan/Covidence-importable RIS file** (`TY=JOUR, PMID, TI, AU, JO, JF, PY, DO, AB` per the RIS field mapping the screening tools expect) emitted from the filtered set, and an **audit-trail CSV** with the 8-column shape `pmid, accessed_at, AMBC_id, isRetracted, journalQualityJufo, citationCount, lookup_error, included_in_prescreen`. The v0.1 returns the assembled rows in-memory in a single consolidated response — there is no monthly re-audit cron (JTBD-8 retraction-monitoring lands under "Want to extend it?" in Hand-off), no v1.0 BiomedCore-search-driven discovery (gated on E-025/E-026 per AP-1 / `anti-pitches.md:37`), no Python CLI sidecar. Render PMIDs / DOIs / `AMBC_` IDs in IBM Plex Mono; prose in Inter (Brand reference). Use Lucide React for icons. Lovable produces the UI shape from this spec — variability across builders is fine; the load-bearing constraint is that the four paragraphs above demonstrate the trust-filter conjunction at non-commercial tier, the lookup-then-fetch canonical-ID flow, the per-item-error column split, and the worked-example anchor.
+The final state offers two downloadable artifacts side-by-side: a **Rayyan/Covidence-importable RIS file** (`TY=JOUR, PMID, TI, AU, JO, JF, PY, DO, AB` per the RIS field mapping the screening tools expect) emitted from the filtered set, and an **audit-trail CSV** with the 11-column shape `pmid, accessed_at, AMBC_id, isRetracted, journalQualityJufo, citationCount, lookup_error, included_in_prescreen, threshold_min_jufo, threshold_min_citation_count, threshold_allow_retracted` — the three trailing `threshold_*` columns repeat the run-time threshold values per row so a reviewer downstream can reproduce the inclusion/exclusion verdicts without needing to remember what the screener set. The v0.1 returns the assembled rows in-memory in a single consolidated response — there is no monthly re-audit cron (JTBD-8 retraction-monitoring lands under "Want to extend it?" in Hand-off), no v1.0 BiomedCore-search-driven discovery (gated on E-025/E-026 per AP-1 / `anti-pitches.md:37`), no Python CLI sidecar. Render PMIDs / DOIs / `AMBC_` IDs in IBM Plex Mono; prose in Inter (Brand reference). Use Lucide React for icons. Lovable produces the UI shape from this spec — variability across builders is fine; the load-bearing constraint is that the four paragraphs above demonstrate the trust-filter conjunction at non-commercial tier, the lookup-then-fetch canonical-ID flow, the per-item-error column split, and the worked-example anchor.
 
 ---
 
@@ -75,12 +81,11 @@ The final state offers two downloadable artifacts side-by-side: a **Rayyan/Covid
 
 The 8 Amass-universal rules below are inherited verbatim across all 6 prototype SKILL.mds. Per-prototype rules 9-12 cover the load-bearing UX / error / discipline surfaces specific to brief 07.
 
-1. **Credentials never enter committed code.** Generate `.env` and `.gitignore` it. Ask the user to paste credentials at hand-off:
+1. **Credentials never enter committed code.** Generate `.env` and `.gitignore` it. Only ONE secret is asked of the user at hand-off:
    ```env
    AMASS_API_KEY=your_amass_api_key_here
-   AMASS_API_BASE_URL=https://api.amass.tech
    ```
-   Per `CLAUDE.md` API conventions: the key reads from `AMASS_API_KEY`, the base URL from `AMASS_API_BASE_URL` (default `https://api.amass.tech`). Never hardcode, never log, never commit.
+   Per `CLAUDE.md` API conventions: the key reads from `AMASS_API_KEY`. The base URL is **hardcoded** to `https://api.amass.tech` in `lib/amass.ts` (single production base; no per-user variance). To point at staging or a local proxy for development, edit the `AMASS_API_BASE_URL` constant in `lib/amass.ts` directly — do NOT re-introduce an env var for this (adding `process.env.AMASS_API_BASE_URL` to `lib/amass.ts` causes Lovable's secrets-UX to prompt the user for a value they don't have, which is unnecessary friction). Never hardcode the API key, never log it, never commit it.
 
 2. **Server-only `AmassClient`.** Lives in `lib/amass.ts` with `import "server-only"` at the top. Never imported from a `"use client"` component. The browser only ever speaks to `/api/<endpoint>`. The Bearer token must never reach the browser bundle; the `server-only` package enforces this at build time.
 
@@ -303,10 +308,16 @@ class AmassClient {
 
 let clientPromise: Promise<AmassClient> | null = null;
 
+// Production Amass API base URL. Hardcoded by design — single production base, no per-user variance.
+// To point at staging or a local proxy for development, edit this constant directly.
+// Do NOT replace this with a process.env lookup — Lovable's secrets-UX will prompt the user for a
+// value they don't have, which is unnecessary friction. Per Hard Rule #1.
+const AMASS_API_BASE_URL = "https://api.amass.tech";
+
 export function getAmassClient(): Promise<AmassClient> {
   return (clientPromise ??= Promise.resolve(new AmassClient({
     apiKey: process.env.AMASS_API_KEY!,
-    baseUrl: process.env.AMASS_API_BASE_URL ?? "https://api.amass.tech",
+    baseUrl: AMASS_API_BASE_URL,
   })));
 }
 
@@ -340,6 +351,12 @@ interface AuditRow {
   referencesTrialCore_AMTCs: string[] | null;  // null when opt-in not enabled; [] when enabled but empty
   lookup_error: string | null;                  // per Hard Rule #11 — verbatim upstream string
   included_in_prescreen: boolean;
+  // Run-time thresholds — same value repeats per row so a downstream reviewer can reproduce the
+  // inclusion/exclusion verdicts without needing to remember what the screener set. Per finding 3
+  // of the v0.1.0 Lovable empirical test adjudication (notes/decisions.md 2026-05-22 ADR).
+  threshold_min_jufo: number;
+  threshold_min_citation_count: number;
+  threshold_allow_retracted: boolean;
 }
 
 interface FilteredPaper {
@@ -424,6 +441,9 @@ export async function POST(req: Request) {
             referencesTrialCore_AMTCs: body.include_referencesTrialCore ? [] : null,
             lookup_error: null,
             included_in_prescreen: false,
+            threshold_min_jufo: body.thresholds.min_jufo,
+            threshold_min_citation_count: body.thresholds.min_citation_count,
+            threshold_allow_retracted: body.thresholds.allow_retracted,
           });
           return null;
         },
@@ -436,9 +456,12 @@ export async function POST(req: Request) {
             isRetracted: null,
             journalQualityJufo: null,
             citationCount: null,
-            referencesTrialCore_AMTCs: body.include_referencesTrialCore ? null : null,
+            referencesTrialCore_AMTCs: null,
             lookup_error: msg,
             included_in_prescreen: false,
+            threshold_min_jufo: body.thresholds.min_jufo,
+            threshold_min_citation_count: body.thresholds.min_citation_count,
+            threshold_allow_retracted: body.thresholds.allow_retracted,
           });
           return null;
         },
@@ -525,7 +548,7 @@ export async function POST(req: Request) {
 }
 ```
 
-**Client-side RIS emission.** The Rayyan/Covidence-importable RIS file is emitted client-side from the `filtered` array in the response. The RIS field mapping is `TY=JOUR` per record + `PMID` (mono) + `TI` (title) + `AU` (one per author) + `JO` (journal) + `JF` (full journal name) + `PY` (publication year — first 4 chars of `publicationDate`) + `DO` (DOI) + `AB` (abstract) + `ER` (end-of-record). The audit-trail CSV is emitted client-side from `audit_trail` with the 8-column shape `pmid, accessed_at, AMBC_id, isRetracted, journalQualityJufo, citationCount, lookup_error, included_in_prescreen` (`referencesTrialCore_AMTCs` appears as a 9th column when the Step 1 opt-in is enabled).
+**Client-side RIS emission.** The Rayyan/Covidence-importable RIS file is emitted client-side from the `filtered` array in the response. The RIS field mapping is `TY=JOUR` per record + `PMID` (mono) + `TI` (title) + `AU` (one per author) + `JO` (journal) + `JF` (full journal name) + `PY` (publication year — first 4 chars of `publicationDate`) + `DO` (DOI) + `AB` (abstract) + `ER` (end-of-record). The audit-trail CSV is emitted client-side from `audit_trail` with the 11-column shape `pmid, accessed_at, AMBC_id, isRetracted, journalQualityJufo, citationCount, lookup_error, included_in_prescreen, threshold_min_jufo, threshold_min_citation_count, threshold_allow_retracted` (`referencesTrialCore_AMTCs` appears as a 12th column when the Step 1 opt-in is enabled). The three trailing `threshold_*` columns repeat the same run-time threshold values per row — the redundancy is deliberate; a single CSV file is self-contained for reproducibility without needing the screener to remember what thresholds were in force at run time.
 
 The two snippets above are the only `lib/<file>.ts` + `app/api/<route>/route.ts` mandated by this prototype. v0.1 returns the assembled response in-memory in a single consolidated JSON — there is no persistence module, no `lib/prescreen-store.ts`, no monthly re-audit cron, no Python CLI sidecar. RIS download / CSV download happens client-side from the response payload. If a downstream extension needs persistence (monthly re-audit history per JTBD-8, in-tool BiomedCore-search discovery per v1.0), the extension SKILL.md includes its own minimal stub per the template's policy — never an `import` from `@/lib/<x>` without a matching snippet.
 
@@ -565,18 +588,20 @@ Then present the hand-off summary. The four verification steps bind to the GLP-1
 
 > **Your SR Pre-Screen Skill is ready.**
 >
+> Before first push (if your AI builder left scaffolding placeholders): remove any `data-lovable-blank-page-placeholder="REMOVE_THIS"` attributes, any `<img>` tags pointing at `cdn.gpteng.co` or similar builder-placeholder CDNs, and any leftover "your app will live here" boilerplate. These render invisibly but pollute the DOM and serve no purpose in production. Search the codebase for `REMOVE_THIS` and `gpteng` before committing.
+>
 > To run it: fill in `.env` and run `npm run dev`.
 >
 > Verify it works:
 > - Click **Try sample** to load the GLP-1 RA in obesity illustrative PMID set (~10 representative PMIDs covering semaglutide / liraglutide / tirzepatide in obesity / weight-loss endpoints). Click **Run pre-screen** with the default thresholds (`min_jufo: 2`, `allow_retracted: false`, `min_citation_count: 5`). Confirm the audit-trail table renders ~10 rows with `isRetracted` + `journalQualityJufo` + `citationCount` populated from live Amass (not hardcoded) and `included_in_prescreen` set per the threshold conjunction.
 > - Tighten the threshold to `min_jufo: 3` and re-run. Confirm any PMID whose returned `journalQualityJufo` is 2 (or null) flips to `included_in_prescreen=false` in the audit trail; the filtered-paper count drops; the dropped rows still appear in the audit trail with `included_in_prescreen=false` (audit-trail completeness preserved — never silent omission).
-> - Click **Download RIS**. Confirm the file emits in Rayyan-importable format (`TY=JOUR` per record + `PMID` + `TI` + `AU` + `JO` + `JF` + `PY` + `DO` + `AB` + `ER`); open in Rayyan or Covidence to confirm the import succeeds end-to-end. Click **Download audit CSV**; confirm the 8-column shape `pmid, accessed_at, AMBC_id, isRetracted, journalQualityJufo, citationCount, lookup_error, included_in_prescreen` renders verbatim.
+> - Click **Download RIS**. Confirm the file emits in Rayyan-importable format (`TY=JOUR` per record + `PMID` + `TI` + `AU` + `JO` + `JF` + `PY` + `DO` + `AB` + `ER`); open in Rayyan or Covidence to confirm the import succeeds end-to-end. Click **Download audit CSV**; confirm the 11-column shape `pmid, accessed_at, AMBC_id, isRetracted, journalQualityJufo, citationCount, lookup_error, included_in_prescreen, threshold_min_jufo, threshold_min_citation_count, threshold_allow_retracted` renders verbatim (12 columns when `include_referencesTrialCore` opt-in is enabled).
 > - Paste an intentionally-invalid PMID `99999999` into the textarea alongside the GLP-1 RA sample; click **Run pre-screen**. Confirm the audit-trail row for `99999999` renders inline with `lookup_error` populated by the verbatim upstream string (e.g. `"Unknown PMID"`) per Hard Rule #11 and `included_in_prescreen=false`, without crashing the surface and without omitting the row.
 >
 > Want to extend it?
 > - Add a monthly re-audit cron per JTBD-8 (`jobs-to-be-done.md:237-260`) — re-resolves each `AMBC_` via the original PMID and flags newly-retracted records between SR publication (t0) and SR update cycle (tN); surfaces in the SR update workflow as a "X papers in your published bibliography were retracted since the last cycle" alert. Anchors to canonical `AMBC_` IDs so the audit chain is reconstructible at any prior cycle.
 > - Add v1.0 BiomedCore-search-driven in-tool discovery — exposes `GET /api/v1/cores/biomedcore/records?query=...&minJournalQualityJufo=2&isRetracted=false&minPublicationDate=...` as an in-tool seed-PMID-list generator for SR teams that want to bootstrap an upstream-search-equivalent corpus inside the tool. `[lifecycle: post-fix-only]` per AP-1 / `anti-pitches.md:37` until E-025/E-026 closes — ships only then.
-> - Add the cross-core walk sub-workflow via `include=referencesTrialCore` on the per-paper GET — for SRs whose inclusion criteria intersect literature with a target trial set (e.g. SR scope "RCTs of semaglutide in obesity where the published paper references a registered NCT"). Renders the `referencesTrialCore_AMTCs` column in the audit CSV; empty arrays for review-article papers render as honest emptiness per E-007 at-scale-symmetry doc-silent caveat.
+> - Add the cross-core walk sub-workflow via `include=referencesTrialCore` on the per-paper GET — for SRs whose inclusion criteria intersect literature with a target trial set (e.g. SR scope "RCTs of semaglutide in obesity where the published paper references a registered NCT"). Renders the `referencesTrialCore_AMTCs` column in the audit CSV; empty arrays for review-article papers render as honest emptiness per E-007 at-scale-symmetry doc-silent caveat. **If your scaffold trimmed `lib/amass.ts` to only the methods this v0.1 actually calls** (`batchLookupBiomed` + `getBiomedRecord` + `mapLookupResult`), you'll need to re-add `getTrialRecord` and optionally `batchLookupTrial` / `resolvePmid` / `resolveDoi` / `resolveNct` helpers to walk papers→trials and back. The full method-set is documented in `06-prototype-kit/amass-skill-template.md` lines 305-360.
 > - I'm done — just show me the summary
 >
 > Have questions? Join the Amass Developer Community on Discord: https://discord.com/invite/sEGaBHMhWa
@@ -590,3 +615,5 @@ Then present the hand-off summary. The four verification steps bind to the GLP-1
 Inputs: `06-prototype-kit/amass-skill-template.md` (Corti-comparable canonical template at commit `94f1680`); `06-prototype-kit/README.md` (kit framing at commit `e331e2a`); `06-prototype-kit/amass-regulatory-evidence-assembler/SKILL.md` (Prototype 1 precedent at commit `c5961be` — `lib/amass.ts` shape + Hard Rules 1-8 inheritance verbatim); `06-prototype-kit/amass-pipeline-monitor/SKILL.md` (Prototype 2 precedent at commit `0627e40` — cross-prototype consistency anchor); `04-opportunities/briefs/07-sr-pre-screen-skill.md` (brief PASS at round-2 narrow verification 2026-05-20; v0.1 batch-lookup-driven path; v1.0 BiomedCore-search-driven discovery `[lifecycle: post-fix-only]` per AP-1); `.claude/skills/worked-example-anchoring/SKILL.md` (skill #8 at commit `d3ac0c3`; Prototype 3 = MEDIUM caveat-and-ship per section (d) line 86); `.claude/skills/quality-gate-papers/SKILL.md` (MCP-vs-HTTP gap on `minCitationCount` as post-filter-only — load-bearing for Hard Rule #10); `01-capabilities/capability-map.md` (Amass API ground-truth — shared-auth, shared-rate-limit, shared-errors, BiomedCore §lookup + §get-by-ID + §default-fields with `isRetracted` / `journalQualityJufo` / `citationCount` at lines 163-169); `03-positioning/unique-values.md` (UV-4 trust-filter conjunction at non-commercial tier + UV-6 batch lookup with per-item-error + UV-1 cross-core spine + UV-7 canonical-ID stability).
 
 MEDIUM caveat-and-ship tier per skill #8 section (d) line 86: workflow is screening-recommendation (analyst makes the final inclusion decision in Rayyan/Covidence downstream), not retraction-or-claim-assertion. No within-Prototype-3 verification dispatched; caveat marker `[identifier-verification caveat — example identifiers assembled without live web access; re-verify against PubMed before binding to a real SR workflow]` carried at 3 anchor sites (title intro paragraph + Try-sample tooltip + Hand-off verification preamble) per the worked-example-anchoring skill's MEDIUM caveat-marker variant. Display=claim defamation-adjacent guard structurally preserved by live-Amass-binding requirement at Hard Rule #12 (Lovable scaffolds against the live API; never against fabricated retraction fixtures).
+
+`[v0.1.1 patch — 2026-05-22 — per the per-prototype publication patch pass discipline established in the 2026-05-22 Workstream C Block 4 close ADR. Bundles five findings from the v0.1.0 Lovable empirical test (FULL PASS verdict, Block 5.5): (1) stack-flexibility rewrite — Lovable defaults to TanStack Start; Next.js App Router supported as alternative; lib/amass.ts pattern stack-agnostic; (2) AMASS_API_BASE_URL friction removal — hardcoded as constant in lib/amass.ts; removed from Hard Rule #1 env block; (3) audit-CSV threshold columns — 8→11 base columns (added threshold_min_jufo + threshold_min_citation_count + threshold_allow_retracted) so reviewers can reproduce inclusion verdicts from a single self-contained CSV; (5) Hand-off placeholder cleanup note — pre-push instruction to remove Lovable scaffolding REMOVE_THIS / gpteng placeholder artifacts; (6) Want to extend it method-set trimming note — if scaffold trimmed lib/amass.ts to P3-only methods, need to re-add getTrialRecord + batchLookupTrial + resolvePmid/resolveDoi/resolveNct for cross-core sub-workflow. Finding 4 (threshold-vs-result mismatch on PMID 37532962 with JuFo=1) closed as non-issue — user confirmed they set min_jufo=1 at run time; filter logic correct. Per Block 5.5 adjudication on top of HEAD 7e55697.]`
