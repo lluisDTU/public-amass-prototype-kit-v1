@@ -4,7 +4,7 @@ description: Use when building an auditable literature-evidence assembler for FD
 license: Apache-2.0
 metadata:
   author: amass
-  version: "0.2.1"
+  version: "0.2.2"
 ---
 
 # Regulatory Evidence Assembler (Amass Cross-core)
@@ -59,7 +59,7 @@ Pin with caret ranges (`^x.y.z`) for compatible patch updates. `zod` is pinned b
 
 After scaffolding, run `npm install`. If any package fails to resolve, check `node_modules/<pkg>/package.json` for the latest stable version and update accordingly.
 
-**Two notes for AI builders that may produce either path.** (1) The route file location differs: TanStack Start uses `src/lib/<name>.functions.ts` with `createServerFn({ method: "POST" }).inputValidator(...).handler(...)`; Next.js App Router uses `app/api/<endpoint>/route.ts` with `export async function POST(req: Request)`. The reference snippet below is shown in Next.js shape — if your builder produces TanStack Start, translate the `POST(req)` handler to `createServerFn(...).handler(async ({ data }) => ...)` and the `req.json()` body parse to `.inputValidator((input) => SubmissionScopeSchema.parse(input))`. (2) The page file location differs: TanStack Router uses `src/routes/index.tsx` with `createFileRoute("/")`; Next.js App Router uses `app/page.tsx`. Either way, the page calls into the server function / route handler the same way at the network level.
+**Three notes for AI builders that may produce either path.** (1) The route file location differs: TanStack Start uses `src/lib/<name>.functions.ts` with `createServerFn({ method: "POST" }).inputValidator(...).handler(...)`; Next.js App Router uses `app/api/<endpoint>/route.ts` with `export async function POST(req: Request)`. The reference snippet below is shown in Next.js shape — if your builder produces TanStack Start, translate the `POST(req)` handler to `createServerFn(...).handler(async ({ data }) => ...)` and the `req.json()` body parse to `.inputValidator((input) => SubmissionScopeSchema.parse(input))`. (2) The page file location differs: TanStack Router uses `src/routes/index.tsx` with `createFileRoute("/")`; Next.js App Router uses `app/page.tsx`. Either way, the page calls into the server function / route handler the same way at the network level. (3) **The outer `try/catch` wrapping the handler body MUST be preserved when translating to TanStack Start.** The Next.js reference snippet wraps the audit logic in `try { ... } catch (err) { return Response.json({error: ...}, {status: 500}) }`. For TanStack Start, wrap the `.handler()` body in `try { ... } catch (err) { throw new Error(err instanceof Error ? err.message : "Audit run failed"); }` — the throw surfaces as `mutation.error.message` on the client (TanStack Query's `useMutation` `isError` path) and renders in the UI's inline error region. Without this wrap, an uncaught throw from any API call (e.g., a 4xx response) propagates to TanStack Router's route-level error boundary and crashes the whole page instead of surfacing as a mutation error. Load-bearing for the kit's "per-item error renders inline without crashing the surface" claim.
 
 ---
 
@@ -91,7 +91,7 @@ The 8 Amass-universal rules below are inherited verbatim across all 6 prototype 
 
 4. **`Authorization: Bearer ${AMASS_API_KEY}` on every Amass request.** On `401` / `403`, surface the credential error directly — retry won't fix it. On `429`, read `Retry-After` and back off exponentially (per the `lib/amass.ts` snippet below). Rate limit is **60 requests / 60 seconds, per user+org** — the per-call retry helper IS the rate-limit defence for the per-submission 200-500-paper audit-chain fan-out.
 
-5. **Read from the `data` key; handle errors at top-level AND per-item.** Two distinct error shapes: top-level (any non-2xx) — `{"error": {"status": ..., "code": ..., "message": ...}}` — caught by the route's outer `try/catch`. Per-item (`POST /records/lookup` returns HTTP 200 with body `{"data": [...]}` — the universal envelope applies here too) — each array element echoes the input alongside the result: `{"input": {...}, "amassIds": ["AMBC_..."]}` for success, or `{"input": {...}, "error": "Not found"}` for failure. The `lib/amass.ts` `batchLookupBiomed` / `batchLookupTrial` methods unwrap the `data` envelope; the `mapLookupResult` helper then preserves positional index alignment with the input items. **Never assume HTTP 200 means every item succeeded.**
+5. **Read from the `data` key; handle errors at top-level AND per-item.** Two distinct error shapes: top-level (any non-2xx) — `{"error": {"status": ..., "code": ..., "message": ...}}` — caught by the route's outer `try/catch`. Per-item (`POST /records/lookup` returns HTTP 200 with body `{"data": [...]}` — the universal envelope applies here too) — each array element echoes the input alongside the result: `{"input": {...}, "amassIds": ["AMBC_..."]}` for success, or `{"input": {...}, "error": {"code": "NOT_FOUND", "message": "Identifier not found"}}` for failure (error is a structured object with `code` + `message` fields, NOT a bare string — empirically verified via direct curl on 2026-05-26). The `lib/amass.ts` `batchLookupBiomed` / `batchLookupTrial` methods unwrap the `data` envelope; the `mapLookupResult` helper extracts `error.message` to a string for caller-side rendering, preserving positional index alignment with the input items. **Never assume HTTP 200 means every item succeeded. Never render `error` as a React child directly — extract `.message` first or React #31 crashes the surface.**
 
 6. **Lookup endpoints translate PMID/DOI/NCT → canonical `AMBC_`/`AMTC_` before fetching by ID.** Raw HTTP `GET /records/{id}` accepts **only** canonical Amass IDs — passing a PMID directly returns 404. The workflow is always: `POST /records/lookup` with `[{pmid: "..."}]` → read `amassIds[0]` (handling per-item-error per Rule #5) → `GET /records/{amassId}`. The `lib/amass.ts` `resolvePmid` / `resolveDoi` / `resolveNct` helpers encode this discipline.
 
@@ -202,7 +202,11 @@ Use **Lucide React** for icons (Lucide only).
 ```ts
 import "server-only";
 
-type LookupResult = ReadonlyArray<{ amassIds?: string[]; error?: string }>;
+type LookupResult = ReadonlyArray<{
+  input?: { pmid?: string; doi?: string; nctId?: string };
+  amassIds?: string[];
+  error?: { code?: string; message?: string };
+}>;
 
 interface AmassClientConfig {
   apiKey: string;
@@ -244,8 +248,10 @@ class AmassClient {
     return (await p).data;
   }
 
-  // Per-item-error helper. Each result is either {amassIds: [...]} or {error: "..."}.
-  // Per Hard Rule #11, the upstream-generated error string passes through verbatim — never paraphrased.
+  // Per-item-error helper. Each result is either {input?, amassIds: [...]} or
+  // {input?, error: {code, message}} per the empirically observed API shape.
+  // Per Hard Rule #11, the upstream-generated error.message string passes through
+  // verbatim — never paraphrased.
   static mapLookupResult<I, O>(
     inputs: I[],
     results: LookupResult,
@@ -256,7 +262,7 @@ class AmassClient {
       const r = results[i];
       return r?.amassIds && r.amassIds.length > 0
         ? onSuccess(input, r.amassIds)
-        : onError(input, r?.error ?? "no result");
+        : onError(input, r?.error?.message ?? "no result");
     });
   }
 
