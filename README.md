@@ -1,10 +1,10 @@
-# Amass Prototype Kit — v0.2.0
+# Amass Prototype Kit — v0.2.1
 
 Amass-API-powered prototype kit for AI builders (Lovable, Claude, Cursor). Each `<slug>/SKILL.md` is a self-contained instruction sheet that scaffolds a working biomedical-evidence app on the [Amass API](https://platform.amass.tech) in one shot.
 
-## What ships in v0.2.0
+## What ships in v0.2.1
 
-v0.2.0 ships **two prototypes** out of a 6-prototype kit:
+v0.2.1 ships **two prototypes** out of a 6-prototype kit:
 
 - `amass-sr-pre-screen` — a systematic-review pre-screening tool that takes a curated PMID dump from an upstream PRISMA search (PubMed / Embase / CENTRAL / Scopus), applies the Amass trust-filter set (JuFo journal quality + retraction flag + citation count), and emits a Rayyan/Covidence-importable RIS file plus an audit-trail CSV — drops a ~5,000-PMID candidate set to ~100-500 papers before title/abstract screening.
 - `amass-regulatory-evidence-assembler` — an auditable literature-evidence assembler for FDA / EMA regulatory submissions (CTD Module 2.5 / 2.7 / PSUR). Resolves a curated PMID/DOI/NCT submission scope to canonical `AMBC_` / `AMTC_` IDs, walks the paper→trial cross-core edge per paper, and emits the audit-CSV row set anchoring each cited paper to its supporting trial via canonical `AMTC_` IDs that survive NCT-registry revisions between submission (t0) and approval (tN).
@@ -27,7 +27,7 @@ Pre-filled with a Tarlatamab (Imdelltra) / Amgen BLA 761344-dlle worked example.
 
 ## Roadmap
 
-v0.2.0 is a staged-validation release shipping **two prototypes** out of a 6-prototype kit. Subsequent versions ship the rest as each prototype passes its own empirical Lovable scaffold test (per the per-prototype publication patch pass discipline):
+v0.2.1 is a staged-validation release shipping **two prototypes** out of a 6-prototype kit. Subsequent versions ship the rest as each prototype passes its own empirical Lovable scaffold test (per the per-prototype publication patch pass discipline):
 
 | Version | Prototype |
 |---|---|

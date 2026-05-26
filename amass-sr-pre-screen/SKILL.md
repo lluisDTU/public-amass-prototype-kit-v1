@@ -4,7 +4,7 @@ description: Use when building a PRISMA pre-screen credibility-filter for system
 license: Apache-2.0
 metadata:
   author: amass
-  version: "0.1.2"
+  version: "0.1.3"
 ---
 
 # SR Pre-Screen Skill (Amass BiomedCore)
@@ -92,7 +92,7 @@ The 8 Amass-universal rules below are inherited verbatim across all kit prototyp
 
 4. **`Authorization: Bearer ${AMASS_API_KEY}` on every Amass request.** On `401` / `403`, surface the credential error directly — retry won't fix it. On `429`, read `Retry-After` and back off exponentially (per the `lib/amass.ts` snippet below). Rate limit is **60 requests / 60 seconds, per user+org** — the per-call retry helper IS the rate-limit defence for the 5,000-PMID-driven ~550-call pre-screen fan-out.
 
-5. **Read from the `data` key; handle errors at top-level AND per-item.** Two distinct error shapes: top-level (any non-2xx) — `{"error": {"status": ..., "code": ..., "message": ...}}` — caught by the route's outer `try/catch`. Per-item (`POST /records/lookup` returns HTTP 200) — each array element is **either** `{"amassIds": ["AMBC_..."]}` **or** `{"error": "Not found"}`. The `mapLookupResult` helper preserves index alignment with the input items. **Never assume HTTP 200 means every item succeeded.**
+5. **Read from the `data` key; handle errors at top-level AND per-item.** Two distinct error shapes: top-level (any non-2xx) — `{"error": {"status": ..., "code": ..., "message": ...}}` — caught by the route's outer `try/catch`. Per-item (`POST /records/lookup` returns HTTP 200 with body `{"data": [...]}` — the universal envelope applies here too) — each array element echoes the input alongside the result: `{"input": {...}, "amassIds": ["AMBC_..."]}` for success, or `{"input": {...}, "error": "Not found"}` for failure. The `lib/amass.ts` `batchLookupBiomed` / `batchLookupTrial` methods unwrap the `data` envelope; the `mapLookupResult` helper then preserves positional index alignment with the input items. **Never assume HTTP 200 means every item succeeded.**
 
 6. **Lookup endpoints translate PMID/DOI/NCT → canonical `AMBC_`/`AMTC_` before fetching by ID.** Raw HTTP `GET /records/{id}` accepts **only** canonical Amass IDs — passing a PMID directly returns 404. The workflow is always: `POST /records/lookup` with `[{pmid: "..."}]` → read `amassIds[0]` (handling per-item-error per Rule #5) → `GET /records/{amassId}`. The `lib/amass.ts` `resolvePmid` / `resolveDoi` / `resolveNct` helpers encode this discipline; for the SR pre-screen the batch form (`batchLookupBiomed`) is used directly with chunks of ~100 PMIDs.
 
@@ -260,12 +260,14 @@ class AmassClient {
   }
 
   // Lookup: PMID/DOI → canonical AMBC_ (Hard Rule #6). The SR pre-screen uses the batch form
-  // directly with chunks of ~100 PMIDs per the E-006 conservative items[]-ceiling heuristic.
+  // directly with chunks of ~100 PMIDs.
+  // Response is wrapped in {"data": [...]} per the universal envelope rule — unwrap before
+  // returning so callers + mapLookupResult see the array directly.
   async batchLookupBiomed(items: ReadonlyArray<{ pmid?: string; doi?: string }>): Promise<LookupResult> {
-    return this.request<LookupResult>("POST", "/api/v1/cores/biomedcore/records/lookup", { items });
+    return this.unwrapData(this.request<{ data: LookupResult }>("POST", "/api/v1/cores/biomedcore/records/lookup", { items }));
   }
   async batchLookupTrial(items: ReadonlyArray<{ nctId: string }>): Promise<LookupResult> {
-    return this.request<LookupResult>("POST", "/api/v1/cores/trialcore/records/lookup", { items });
+    return this.unwrapData(this.request<{ data: LookupResult }>("POST", "/api/v1/cores/trialcore/records/lookup", { items }));
   }
   async resolvePmid(pmid: string): Promise<string | null> {
     return (await this.batchLookupBiomed([{ pmid }]))[0]?.amassIds?.[0] ?? null;
