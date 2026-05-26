@@ -4,7 +4,7 @@ description: Use when building an auditable literature-evidence assembler for FD
 license: Apache-2.0
 metadata:
   author: amass
-  version: "0.2.2"
+  version: "0.2.3"
 ---
 
 # Regulatory Evidence Assembler (Amass Cross-core)
@@ -12,26 +12,6 @@ metadata:
 Build a working auditable literature-evidence assembler on the Amass API. The user is a medical writer at an evidence-synthesis CRO (e.g. Arriello / Masuu Global) who just got Amass API credentials and wants a TypeScript audit-chain tool running locally in under five minutes. Lovable typically scaffolds TanStack Start (TanStack Router + `createServerFn` server-functions); Next.js (App Router with `app/api/<endpoint>/route.ts`) is the alternative path. Both work end-to-end against the same `lib/amass.ts` client pattern — the Amass primitives are stack-agnostic.
 
 The CRO operator pastes a curated PMID/DOI/NCT list exported from upstream discovery (PubHive / Embase / Scopus); the tool resolves each external identifier to a canonical `AMBC_` / `AMTC_` Amass ID, walks the paper→trial cross-core edge per paper (`include=referencesTrialCore,citedBy`), and emits the audit-CSV row set that becomes Appendix B of the submission package — anchoring each cited paper to the supporting trial via canonical `AMTC_` IDs that survive NCT-registry revisions between submission (t0) and approval (tN). The worked example binds to the Tarlatamab (Imdelltra) / Amgen BLA 761344-dlle submission scope with the verified identifier set Ahn MJ et al. NEJM 2023 (PMID 37861218) + Rudin et al. J Hematol Oncol 2023 (PMID 37355629) + DeLLphi-301 (NCT05060016) + DeLLphi-304 (NCT05740566). `[Tarlatamab anchor set verified against PubMed + ClinicalTrials.gov + FDA approval letter at draft time]`
-
----
-
-## Step 1 — Confirm the build
-
-Use `AskUserQuestion` if available; otherwise ask the user directly before writing any code.
-
-Fetch https://platform.amass.tech for the Amass API docs first, then ask one question. Skip / "you decide" → use the default.
-
-**Which submission types should the audit tool support?** _(default: `module-2-5` + `module-2-7` + `psur-pader` + `fda-info-request`)_
-
-- **`module-2-5`** — CTD Module 2.5 (Clinical Overview) — *(default)*
-- **`module-2-7`** — CTD Module 2.7 (Clinical Summary) — *(default)*
-- **`psur-pader`** — Periodic Safety Update Reports / Periodic Adverse Drug Experience Reports — *(default)*
-- **`fda-info-request`** — Response-to-FDA Information Requests (30-day turnaround) — *(default)*
-- `module-3-quality` — CTD Module 3 (Quality / CMC)
-
-**`module-3-quality` carries a CMC-domain caveat.** Module 3 covers Chemistry, Manufacturing, and Controls — a CMC subject-matter domain distinct from the clinical-literature audit chain the v0.1 demonstrates. A CMC reviewer needs primary-source dossiers and analytical-method validation rather than literature citations; this option is included for scope-completeness but is best treated as a follow-on once a CMC subject-matter expert reviews the workflow.
-
-If the user adds a submission type, generate matching "Try sample" seed prompts so every wired option gets exercised against the Tarlatamab worked-example identifier set.
 
 ---
 
@@ -498,17 +478,7 @@ The two snippets above are the only `lib/<file>.ts` + `app/api/<route>/route.ts`
 
 Build, lint, and typecheck must pass.
 
-**First, ask about credentials.** The demo is scaffolded but `.env` is placeholder. Use `AskUserQuestion` if available; otherwise ask directly:
-
-**Do you have Amass API credentials?**
-- **Yes — I'll paste them in** _(default)_
-- **No — I need to sign up** (~2 min at https://platform.amass.tech)
-- **Skip — I'll wire them up later**
-
-Branch on the answer:
-- **Yes:** "Find your `AMASS_API_KEY` at https://platform.amass.tech in the API credentials section — copy and paste into `.env`." Then run `npm run dev` and show the summary below.
-- **No:** "Sign up at https://platform.amass.tech, then come back." When ready, proceed as Yes.
-- **Skip:** show the summary below but DO NOT run the dev server. Close with: "I scaffolded `.env` but did not verify end-to-end. Fill `.env` and run `npm run dev` once credentials are ready."
+**Credentials.** Get your `AMASS_API_KEY` from https://platform.amass.tech and add it to `.env`. Do NOT use `AskUserQuestion` to gate scaffolding on credentials — Lovable's (or any AI builder's) standard env-var prompt covers this at run time. Just scaffold the app with placeholder `.env`, then run `npm run dev` once the key is in place.
 
 Then present the hand-off summary. The four verification steps bind to the Tarlatamab worked-example identifier set `[Tarlatamab anchor set verified against PubMed + ClinicalTrials.gov + FDA approval letter at draft time]`:
 

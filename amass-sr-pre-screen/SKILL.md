@@ -4,7 +4,7 @@ description: Use when building a PRISMA pre-screen credibility-filter for system
 license: Apache-2.0
 metadata:
   author: amass
-  version: "0.1.4"
+  version: "0.1.5"
 ---
 
 # SR Pre-Screen Skill (Amass BiomedCore)
@@ -12,27 +12,6 @@ metadata:
 Build a working PRISMA pre-screen credibility-filter on the Amass API. The user is a systematic-review researcher running PRISMA 2020 who just got Amass API credentials and wants a TypeScript pre-screen tool running locally in under five minutes. Lovable typically scaffolds TanStack Start (TanStack Router + `createServerFn` server-functions); Next.js (App Router with `app/api/<endpoint>/route.ts`) is the alternative path. Both work end-to-end against the same `lib/amass.ts` client pattern — the Amass primitives are stack-agnostic.
 
 The SR researcher pastes a curated PMID dump from the upstream PRISMA search step (PubMed / Embase / CENTRAL / Scopus produce the standard 5,000-PMID export); the tool resolves each PMID to a canonical `AMBC_` Amass ID via batch lookup, fans out per-paper GETs to retrieve `isRetracted` + `journalQualityJufo` + `citationCount`, post-filters client-side against the configured credibility thresholds, and emits a Rayyan/Covidence-importable RIS file plus an audit-trail CSV — dropping the 5,000-PMID candidate set to a ~100-500-paper screening set before title/abstract screening. The worked example binds to an illustrative SR scope ("GLP-1 receptor agonists in obesity") with ~10 representative PMIDs. `[identifier-verification caveat — example identifiers assembled without live web access; re-verify against PubMed before binding to a real SR workflow]`
-
----
-
-## Step 1 — Confirm the build
-
-Use `AskUserQuestion` if available; otherwise ask the user directly before writing any code.
-
-Fetch https://platform.amass.tech for the Amass API docs first, then ask one question. Skip / "you decide" → use the default.
-
-**Which credibility-filter thresholds should the pre-screen apply?** _(default: `min_jufo: 2` + `allow_retracted: false` + `min_citation_count: 5`)_
-
-- **`min_jufo: 2`** — require JuFo tier 2 or 3 (domain-leading or highest); drops papers from journals JuFo flags as 0 or 1 *(default)*
-- **`allow_retracted: false`** — drop retracted papers per `isRetracted` field; the conservative PRISMA pre-screen default *(default)*
-- **`min_citation_count: 5`** — drop papers with `citationCount < 5` as a conservative post-filter signal *(default)*
-- `min_jufo: 3` — stricter; require JuFo tier 3 only (highest tier)
-- `min_jufo: 0` — opt out of the JuFo leg entirely (US-buyer-friendly; JuFo is a Finnish national journal-quality scale)
-- `include_referencesTrialCore: true` — opt-in cross-core walk; for SRs whose inclusion criteria intersect literature with a target trial set
-
-**`include_referencesTrialCore: true` opts into a paper-side cross-core include.** The v0.1 fetches `include=referencesTrialCore` on each per-paper GET when this opt-in is set; the audit-trail CSV gains a `referencesTrialCore_AMTCs` column. At-scale symmetry of the cross-core spine is not yet a published guarantee — empty arrays render as honest emptiness (review-article papers commonly have no cited trials); see Hard Rule #12.
-
-If the user supplies non-default thresholds, generate matching "Try sample" seed prompts so every wired threshold gets exercised against the GLP-1 RA worked-example PMID set.
 
 ---
 
@@ -563,17 +542,7 @@ The two snippets above are the only `lib/<file>.ts` + `app/api/<route>/route.ts`
 
 Build, lint, and typecheck must pass.
 
-**First, ask about credentials.** The demo is scaffolded but `.env` is placeholder. Use `AskUserQuestion` if available; otherwise ask directly:
-
-**Do you have Amass API credentials?**
-- **Yes — I'll paste them in** _(default)_
-- **No — I need to sign up** (~2 min at https://platform.amass.tech)
-- **Skip — I'll wire them up later**
-
-Branch on the answer:
-- **Yes:** "Find your `AMASS_API_KEY` at https://platform.amass.tech in the API credentials section — copy and paste into `.env`." Then run `npm run dev` and show the summary below.
-- **No:** "Sign up at https://platform.amass.tech, then come back." When ready, proceed as Yes.
-- **Skip:** show the summary below but DO NOT run the dev server. Close with: "I scaffolded `.env` but did not verify end-to-end. Fill `.env` and run `npm run dev` once credentials are ready."
+**Credentials.** Get your `AMASS_API_KEY` from https://platform.amass.tech and add it to `.env`. Do NOT use `AskUserQuestion` to gate scaffolding on credentials — Lovable's (or any AI builder's) standard env-var prompt covers this at run time. Just scaffold the app with placeholder `.env`, then run `npm run dev` once the key is in place.
 
 Then present the hand-off summary. The four verification steps bind to the GLP-1 RA in obesity illustrative SR scope `[identifier-verification caveat — example identifiers assembled without live web access; re-verify against PubMed before binding to a real SR workflow]`:
 
