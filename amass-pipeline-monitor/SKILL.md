@@ -15,25 +15,31 @@ The analyst pastes a YAML sponsor watchlist (canonical sponsors + indication-clu
 
 ---
 
-## Stack — pin tight
+## Stack — flexible at the framework layer, principle-pinned at the API layer
 
-Next.js (App Router) + TypeScript. Pin with caret ranges for compatible patch updates:
+**TypeScript + React + a server-function-capable framework.** Lovable defaults to **TanStack Start** (`@tanstack/react-router` + `@tanstack/react-start`'s `createServerFn` for server-side handlers). **Next.js (App Router)** with `app/api/<endpoint>/route.ts` POST handlers is the equivalent alternative path. Both work end-to-end against the same `lib/amass.ts` client; pick whichever your AI builder produces by default. The Amass primitives (canonical-ID resolution + per-item-error semantics + cross-core walks + trust filters) are stack-agnostic — the framework only wraps them.
+
+What IS pinned (load-bearing):
 
 ```json
-"@ai-sdk/react":          "^1.0.0",
-"ai":                     "^4.0.0",
-"next":                   "^14.2.0",
 "react":                  "^18.3.1",
 "react-dom":              "^18.3.1",
-"react-markdown":         "^9.0.0",
+"typescript":             "^5.4.5",
 "zod":                    "^3.23.8",
 "lucide-react":           "^0.453.0",
 "server-only":            "^0.0.1"
 ```
 
-The `next` / `ai` / `@ai-sdk/react` triplet must co-pin: the dashboard's optional per-sponsor streaming progress display uses `ai` SDK primitives that change shape across minor versions. `zod` is pinned because the request-body schema is the contract; `server-only` is the build-time enforcement Hard Rule #2 depends on.
+What's framework-specific (one set OR the other, not both):
+
+- **TanStack Start path**: `@tanstack/react-router`, `@tanstack/react-start`, `vite`, `@vitejs/plugin-react`.
+- **Next.js (App Router) path**: `next` (latest stable), `@types/node`.
+
+Pin with caret ranges (`^x.y.z`) for compatible patch updates. `zod` is pinned because the watchlist-scope schema (`WatchlistSchema`) is the request contract — silent zod-version drift in default-value or refine semantics shifts what the route accepts. `server-only` is pinned because it is the build-time enforcement Hard Rule #2 depends on (works identically in Next.js and TanStack Start). The per-item-error verbatim preservation (Hard Rule #11) and the 3-panel digest decomposition (Hard Rule #10) are load-bearing for the dashboard semantics; do not paraphrase upstream error strings or collapse the panel decomposition.
 
 After scaffolding, run `npm install`. If any package fails to resolve, check `node_modules/<pkg>/package.json` for the latest stable version and update accordingly.
+
+**Three notes for AI builders that may produce either path.** (1) The route file location differs: TanStack Start uses `src/lib/<name>.functions.ts` with `createServerFn({ method: "POST" }).inputValidator(...).handler(...)`; Next.js App Router uses `app/api/<endpoint>/route.ts` with `export async function POST(req: Request)`. The reference snippet below is shown in Next.js shape — if your builder produces TanStack Start, translate the `POST(req)` handler to `createServerFn(...).handler(async ({ data }) => ...)` and the `req.json()` body parse to `.inputValidator((input) => WatchlistSchema.parse(input))`. (2) The page file location differs: TanStack Router uses `src/routes/index.tsx` with `createFileRoute("/")`; Next.js App Router uses `app/page.tsx`. Either way, the page calls into the server function / route handler the same way at the network level. (3) **The outer `try/catch` wrapping the handler body MUST be preserved when translating to TanStack Start.** The Next.js reference snippet wraps the audit logic in `try { ... } catch (err) { return Response.json({error: ...}, {status: 500}) }`. For TanStack Start, wrap the `.handler()` body in `try { ... } catch (err) { throw new Error(err instanceof Error ? err.message : "Digest run failed"); }` — the throw surfaces as `mutation.error.message` on the client (TanStack Query's `useMutation` `isError` path) and renders in the UI's inline error region. Without this wrap, an uncaught throw from any API call propagates to TanStack Router's route-level error boundary and crashes the whole page instead of surfacing as a mutation error. Load-bearing for the kit's "per-item error renders inline without crashing the surface" claim.
 
 ---
 
@@ -53,12 +59,11 @@ The cron + fan-out + cancel UX runs per-weekly digest. Per-sponsor TrialCore sea
 
 The 8 Amass-universal rules below are inherited verbatim across all 6 prototype SKILL.mds. Per-prototype rules 9-13 follow; each is 2-4 sentences with a one-line rationale covering load-bearing surfaces, not exhaustive coverage.
 
-1. **Credentials never enter committed code.** Generate `.env` and `.gitignore` it. Ask the user to paste credentials at hand-off:
+1. **Credentials never enter committed code.** Generate `.env` and `.gitignore` it. Only ONE secret is asked of the user at hand-off:
    ```env
    AMASS_API_KEY=your_amass_api_key_here
-   AMASS_API_BASE_URL=https://api.amass.tech
    ```
-   Per Amass API conventions: the key reads from `AMASS_API_KEY`, the base URL from `AMASS_API_BASE_URL` (default `https://api.amass.tech`). Never hardcode, never log, never commit.
+   Per Amass API conventions: the key reads from `AMASS_API_KEY`. The base URL is **hardcoded** to `https://api.amass.tech` in `lib/amass.ts` (single production base; no per-user variance). To point at staging or a local proxy for development, edit the `AMASS_API_BASE_URL` constant in `lib/amass.ts` directly — do NOT re-introduce an env var for this (adding `process.env.AMASS_API_BASE_URL` to `lib/amass.ts` causes Lovable's secrets-UX to prompt the user for a value they don't have, which is unnecessary friction). Never hardcode the API key, never log it, never commit it.
 
 2. **Server-only `AmassClient`.** Lives in `lib/amass.ts` with `import "server-only"` at the top. Never imported from a `"use client"` component. The browser only ever speaks to `/api/<endpoint>`. The Bearer token must never reach the browser bundle; the `server-only` package enforces this at build time.
 
@@ -324,10 +329,16 @@ export function canonicaliseSponsorName(raw: string): string {
 
 let clientPromise: Promise<AmassClient> | null = null;
 
+// Production Amass API base URL. Hardcoded by design — single production base, no per-user variance.
+// To point at staging or a local proxy for development, edit this constant directly.
+// Do NOT replace this with a process.env lookup — Lovable's secrets-UX will prompt the user for a
+// value they don't have, which is unnecessary friction. Per Hard Rule #1.
+const AMASS_API_BASE_URL = "https://api.amass.tech";
+
 export function getAmassClient(): Promise<AmassClient> {
   return (clientPromise ??= Promise.resolve(new AmassClient({
     apiKey: process.env.AMASS_API_KEY!,
-    baseUrl: process.env.AMASS_API_BASE_URL ?? "https://api.amass.tech",
+    baseUrl: AMASS_API_BASE_URL,
   })));
 }
 ```
@@ -513,6 +524,8 @@ Build, lint, and typecheck must pass.
 Then present the hand-off summary:
 
 > **Your Pipeline Monitor CI Agent is ready.**
+>
+> Before first push (if your AI builder left scaffolding placeholders): remove any `data-lovable-blank-page-placeholder="REMOVE_THIS"` attributes, any `<img>` tags pointing at `cdn.gpteng.co` or similar builder-placeholder CDNs, and any leftover "your app will live here" boilerplate. These render invisibly but pollute the DOM and serve no purpose in production. Search the codebase for `REMOVE_THIS` and `gpteng` before committing.
 >
 > To run it: fill in `.env` and run `npm run dev`.
 >

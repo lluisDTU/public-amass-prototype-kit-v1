@@ -4,7 +4,7 @@ description: Use when building a biomedical RAG tool with built-in Amass trust f
 license: Apache-2.0
 metadata:
   author: amass
-  version: "0.2.3"
+  version: "0.1.0"
 ---
 
 # Trust-Filtered Biomedical RAG (Amass MCP)
